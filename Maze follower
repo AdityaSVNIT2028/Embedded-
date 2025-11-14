@@ -1,0 +1,176 @@
+// this code is in consideration that we are using 3 ultrasonic sensors and follow maze
+
+// === Motor driver pins ===
+#define ENA 6  // Left motor speed
+#define IN1 2  // Left motor forward
+#define IN2 3  // Left motor backward
+#define ENB 11 // Right motor speed
+#define IN3 4  // Right motor forward
+#define IN4 5  // Right motor backward
+
+// === Ultrasonic sensor pins ===
+#define MTRIG A0
+#define MECHO A1
+#define LTRIG A2
+#define LECHO A3
+#define RTRIG A4
+#define RECHO A5
+
+// === Distance thresholds (in cm) ===
+#define FRONT_THRESHOLD 20
+#define CLOSE_FRONT_THRESHOLD 10
+#define SIDE_THRESHOLD 15
+#define WALL_CLOSE_THRESHOLD 7
+#define DEADZONE 2  // Ignore tiny differences
+
+// === Speed settings ===
+int speedENA = 155;  // Slightly faster left motor
+int speedENB = 145;
+
+int smoothSpeedENA = 60;
+int smoothSpeedENB = 50;
+
+int fastSpeedENA = 100;
+int fastSpeedENB = 90;
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT); pinMode(ENA, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT); pinMode(ENB, OUTPUT);
+  pinMode(MTRIG, OUTPUT); pinMode(MECHO, INPUT);
+  pinMode(LTRIG, OUTPUT); pinMode(LECHO, INPUT);
+  pinMode(RTRIG, OUTPUT); pinMode(RECHO, INPUT);
+}
+
+// === Raw ultrasonic read ===
+long readUltrasonic(int trigPin, int echoPin) {
+  digitalWrite(trigPin, LOW); delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH); delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  long duration = pulseIn(echoPin, HIGH, 30000);
+  return duration * 0.034 / 2;
+}
+
+// === Filtered ultrasonic read ===
+long safeReadUltrasonic(int trigPin, int echoPin) {
+  long dist = readUltrasonic(trigPin, echoPin);
+  if (dist == 0 || dist > 300) dist = 300;
+  return dist;
+}
+
+// === Movement functions ===
+void moveForward() {
+  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); analogWrite(ENA, speedENA);
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); analogWrite(ENB, speedENB);
+}
+
+void moveBackward() {
+  digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); analogWrite(ENA, speedENA);
+  digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); analogWrite(ENB, speedENB);
+}
+
+void stopMotors() {
+  analogWrite(ENA, 0); analogWrite(ENB, 0);
+  digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
+}
+
+void smoothTurnLeft() {
+  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); analogWrite(ENA, smoothSpeedENA);
+  digitalWrite(IN3, LOW); digitalWrite(IN4, LOW); analogWrite(ENB, 0);
+}
+
+void smoothTurnRight() {
+  digitalWrite(IN1, LOW); digitalWrite(IN2, LOW); analogWrite(ENA, 0);
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); analogWrite(ENB, smoothSpeedENB);
+}
+
+void fastTurnLeft() {
+  digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); analogWrite(ENA, fastSpeedENA);
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); analogWrite(ENB, fastSpeedENB);
+}
+
+void fastTurnRight() {
+  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); analogWrite(ENA, fastSpeedENA);
+  digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); analogWrite(ENB, fastSpeedENB);
+}
+
+void loop() {
+  long frontDist = safeReadUltrasonic(MTRIG, MECHO);
+  long leftDist  = safeReadUltrasonic(LTRIG, LECHO);
+  long rightDist = safeReadUltrasonic(RTRIG, RECHO);
+
+  Serial.print("F: "); Serial.print(frontDist);
+  Serial.print(" L: "); Serial.print(leftDist);
+  Serial.print(" R: "); Serial.println(rightDist);
+
+  // === Case 1: Very close front obstacle ===
+  if (frontDist < CLOSE_FRONT_THRESHOLD) {
+    analogWrite(ENA, 0); analogWrite(ENB, 0);
+    delay(100);
+
+    if (leftDist > rightDist) {
+      Serial.println("Close front! Turning Left");
+      fastTurnLeft();
+    } else {
+      Serial.println("Close front! Turning Right");
+      fastTurnRight();
+    }
+    delay(500);
+    stopMotors();
+    delay(100);
+  }
+
+  // === Case 2: Front obstacle within threshold ===
+  else if (frontDist < FRONT_THRESHOLD) {
+    analogWrite(ENA, 0); analogWrite(ENB, 0);
+    delay(100);
+
+    if (rightDist > leftDist && rightDist > SIDE_THRESHOLD) {
+      Serial.println("Turning Right");
+      fastTurnRight();
+    } else if (leftDist > SIDE_THRESHOLD) {
+      Serial.println("Turning Left");
+      fastTurnLeft();
+    } else {
+    //   Serial.println("Reversing");
+    //   moveBackward();
+    //   delay(400);
+    // }
+    stopMotors();
+    delay(100);
+  }
+
+  // === Case 3: Front is clear, wall hugging logic ===
+  else {
+    // Dead zone to avoid jitter
+    if (abs(leftDist - rightDist) < DEADZONE) {
+      Serial.println("Balanced wall distance. Moving forward.");
+      moveForward();
+    }
+
+    else if (leftDist <= WALL_CLOSE_THRESHOLD && rightDist <= WALL_CLOSE_THRESHOLD) {
+      Serial.println("Walls too close both sides. Moving carefully.");
+      moveForward();
+    }
+
+    else if (leftDist <= WALL_CLOSE_THRESHOLD) {
+      Serial.println("Too close to left wall. Adjusting right.");
+      smoothTurnRight();
+      delay(200);
+    }
+
+    else if (rightDist <= WALL_CLOSE_THRESHOLD) {
+      Serial.println("Too close to right wall. Adjusting left.");
+      smoothTurnLeft();
+      delay(200);
+    }
+
+    else {
+      Serial.println("Path is clear. Moving forward.");
+      moveForward();
+    }
+  }
+
+  delay(50); // loop stability
+}
