@@ -1,0 +1,79 @@
+// Display message “Dept of EC 
+                    SVNIT” on 1st line of character LCD interfaced to MCU board using 8-bit data lines, control lines and supply.
+
+#include "stm32g071xx.h"
+
+void LCD_gpio(void); // To configure GPIO
+void LCD_cmd(uint8_t cmd); // For LCD commands
+void LCD_disp(unsigned char char1); // To print the character
+void msdelay(uint32_t value);
+
+int main(void) {
+
+unsigned char msg1 [16] ="Dept of EC";
+   unsigned char msg2 [16] ="SVNIT";
+   uint8_t j;
+   LCD_gpio ();     // Initialize GPIO
+   msdelay (50);
+   LCD_cmd (0x38);  // 8-bit mode, 2 line, 5x7 dots
+   LCD_cmd (0x01);  // clear display screen
+   LCD_cmd (0x0E);  // display on, cursor on
+   LCD_cmd (0x06);  // auto increment cursor
+   LCD_cmd (0x80);
+
+  for (j=0; j<16; ++j){
+        LCD_disp (msg1[j]);}
+
+    LCD_cmd (0xC0);  // go to 2nd line
+for (j=0; j<16; ++j){
+        LCD_disp (msg2[j]);}
+}
+void LCD_gpio(void){
+//Enable clock for Port A and B
+RCC->IOPENR |= 0x00000003;
+
+//Configure GPIO A 4,6,7 PIN as output mode (push-pull)
+GPIOA->MODER &= 0xFFFF0CFF;
+GPIOA->MODER |= 0x00005100;
+GPIOA->OTYPER &= 0xFFFFFF2F; // Use push pull
+GPIOA->PUPDR &= 0xFFFF0CFF;  //No pull up, No pull down
+
+
+// set pins 0 to 7 of port B as output
+GPIOB->MODER &= 0xFFFF0000;
+GPIOB->MODER |= 0x00005555;
+GPIOB->OTYPER &= 0xFFFFFF00; // Use push pull
+GPIOB->PUPDR &= 0xFFFF0000; //No pull up, No pull down
+GPIOA->ODR = GPIOA->ODR & 0x0FFBF; //PA6 (R/W) LOW
+}
+void LCD_cmd(uint8_t cmd){
+
+GPIOB->ODR = GPIOB->ODR & 0xFF00;  
+  GPIOB->ODR = GPIOB->ODR | cmd;    // send command
+
+  GPIOA->ODR = GPIOA->ODR & 0xFF7F;  // RS=0 on pin PA7
+
+  GPIOA->ODR = GPIOA->ODR | 0x0010;  // EN=1 on pin PA5
+  msdelay(1);
+  GPIOA->ODR = GPIOA->ODR & 0xFFEF;  // EN=0 on pin PA5
+
+  msdelay (50);
+}
+
+void LCD_disp (unsigned char char1) {
+        GPIOB->ODR = GPIOB->ODR & 0xFF00;
+        GPIOB->ODR = GPIOB->ODR | char1;    // send ascii code
+
+        GPIOA->ODR = GPIOA->ODR | 0x0080;   // RS=1 on pin PA7
+
+        GPIOA->ODR = GPIOA->ODR | 0x0010;   // EN=1 on pin PA5
+        msdelay(1);
+        GPIOA->ODR = GPIOA->ODR & 0xFFEF;   // EN=0 on pin PA5
+        msdelay (50);
+}
+
+void msdelay(uint32_t value){
+long int loops;
+loops=850*value*4;
+while(loops--){}
+}
