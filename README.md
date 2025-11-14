@@ -1,0 +1,2 @@
+# Embedded-
+For simple projects 
